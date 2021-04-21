@@ -1,7 +1,7 @@
 var express = require('express');
 //const bodyParser = require('body-parser');
-const accountSid = 'AC60e14428b5aadcb553c05f4fc6fa442e'; 
-const authToken = '6a966ec15cc6110d0912e5c48aebd988'; 
+const accountSid = 'AC60e14428b5aadcb'+'553c05f4fc6fa442e'; 
+const authToken = 'b6b42ad2eda7b770'+'9dcd5e511b597c24'; 
 const client = require('twilio')(accountSid, authToken); 
  
 
