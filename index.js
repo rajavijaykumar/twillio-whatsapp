@@ -17,6 +17,14 @@ app.get('/', function (req, res) {
   res.send('Hello World!');
 });
 
+
+app.get('/nse', async function (req, res) {
+  data = await downloadScript()
+  console.dir(data)
+  res.send(data);
+});
+
+
 var mapNews = {};
 
 var latestNews = {
@@ -120,6 +128,161 @@ app.post('/wastatus', function (req, res) {
   console.log('Got body:', req.body);
   res.send('Got reply!');
 });
+
+
+
+let DateStr = 0, Series = 1, OpenPrice = 2, HighPrice = 3, LowPrice = 4,
+    PrevClose = 5, LastPrice = 6, ClosePrice = 7, VWAP = 8,
+    FiftyTwoWH = 9, FiftyTwoWL = 10, Volumn = 11, Value = 12,
+    NoOfTrades = 13, PL = 14, PER = 15, High_Low = 16,
+    Open_High = 17, Open_Low = 18;
+
+const https = require('https');
+//const { resolve } = require('path');
+const zlib = require('zlib');
+//downloadScript();
+async function downloadScript() {
+
+  let promise = new Promise((resolve, reject) => {
+    const options = {
+      hostname: 'www.nseindia.com',
+      port: 443,
+      path: '/',
+      method: 'GET',
+      agent: false,
+      headers: {
+          "X-Requested-With": "XMLHttpRequest",
+          accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+          'accept-encoding': 'gzip, deflate, br',
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.106 Safari/537.36',
+          'accept-language': 'en-US,en;q=0.9'
+      }
+  }
+
+  const req = https.request(options,  (res) =>  {
+      //console.log(`statusCode: ${res.statusCode}`);
+      //console.log(res.headers);
+      var cookieStr = '';
+      res.headers["set-cookie"].map(c => cookieStr += (c.substring(0, c.indexOf(';') + 1)) + ' ');
+      //var htmlData = [];
+      res.on('data', data => {
+          //htmlData.push(data);
+      });
+      res.on('end', async function () {
+          /*var buffer = Buffer.concat(htmlData);
+          zlib.gunzip(buffer, function (err, decoded) {
+              //console.log(decoded.toString());
+          });*/
+         let d = await downloadAllScriptData(cookieStr);
+         resolve(d)
+      });
+  });
+  req.on('error', error => {
+      console.error(error);
+  })
+  req.end();
+  });
+
+  return promise;
+    
+}
+
+async function downloadAllScriptData(cookieStr) {
+
+    var today = new Date()
+    var todayDay = (today.getDate() < 10 ? '0' + today.getDate() : today.getDate());
+    var todayMonth = (today.getMonth() < 9 ? '0' + (today.getMonth() + 1) : (today.getMonth() + 1))
+    var todayStr = todayDay + '-' + todayMonth + '-' + today.getFullYear()
+
+    var fromDay = new Date()
+    fromDay.setDate(today.getDate() - 400)
+    var fromDayDate = (fromDay.getDate() < 10 ? '0' + fromDay.getDate() : fromDay.getDate());
+    var fromDayMonth = (fromDay.getMonth() < 9 ? '0' + (fromDay.getMonth() + 1) : (fromDay.getMonth() + 1))
+    var fromDayStr = fromDayDate + '-' + fromDayMonth + '-' + fromDay.getFullYear()
+
+    let sArr = ['INFY', 'PNB']
+    let obj = {};
+    for(let i=0; i<sArr.length; i++) {
+        let d = await downloadData(cookieStr, sArr[i], fromDayStr, todayStr)
+        obj[sArr[i]] = d;
+    }
+    return obj
+}
+
+async function downloadData(cookie, scriptName, fromDayStr, todayStr) {
+
+  let promise = new Promise((resolve, reject) => {
+    const options = {
+      hostname: 'www.nseindia.com',
+      port: 443,
+      path: '/api/historical/cm/equity?symbol=' + encodeURIComponent(scriptName) + "&series=[%22EQ%22]&from=" + fromDayStr + "&to=" + todayStr + "&csv=true",
+      method: 'GET',
+      agent: false,
+      headers: {
+          "X-Requested-With": "XMLHttpRequest",
+          accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+          'accept-encoding': 'gzip, deflate, br',
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.106 Safari/537.36',
+          'accept-language': 'en-US,en;q=0.9',
+          cookie: cookie
+      }
+  }
+
+  const req = https.request(options, res => {
+      //console.log(`statusCode: ${res.statusCode}`);
+      var htmlData = [];
+      res.on('data', data => {
+          htmlData.push(data)
+      });
+      res.on('end', function () {
+          var buffer = Buffer.concat(htmlData);
+          zlib.gunzip(buffer, function (err, decoded) {
+              var csv = decoded.toString()
+
+              let scriptData = csv.match(/[^\r\n]+/g);
+              scriptData.splice(0, 1)
+              let data = []
+              scriptData.forEach(d => {
+                  d = d.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)
+                  data.push(d.map(v => v.replace(/"/g, "")).map(v => v.replace(/,/g, "")))
+              });
+              data.forEach((d, index) => {
+                  d[Series] = '';
+                  d[FiftyTwoWH] = '';
+                  d[FiftyTwoWL] = '';
+                  d.forEach((s, index, arr) => {
+                      if (!isNaN(s)) {
+                          arr[index] = parseFloat(s)
+                      }
+                  });
+                  if (index < (data.length - 1)) {
+                      data[index][PL] = parseFloat((d[ClosePrice] - d[PrevClose]).toFixed(2))
+                      data[index][PER] = parseFloat(((d[ClosePrice] - d[PrevClose]) * 100 / d[PrevClose]).toFixed(2))
+                  } else {
+                      data[index][PL] = 0
+                      data[index][PER] = 0
+                  }
+                  data[index][High_Low] = parseFloat((d[HighPrice] - d[LowPrice]).toFixed(2))
+
+                  data[index][Open_High] = parseFloat((d[HighPrice] - d[OpenPrice]).toFixed(2))
+                  data[index][Open_Low] = parseFloat((d[OpenPrice] - d[LowPrice]).toFixed(2))
+              });
+              console.dir(data);
+              resolve(data)
+          });
+      });
+  });
+  req.on('error', error => {
+      console.error(error);
+  });
+  req.end();
+  })
+
+  return promise
+
+    
+}
+
 const port = process.env.PORT || 8080;
 app.listen(port, function () {
   console.log('Example app listening on port ' + port);
